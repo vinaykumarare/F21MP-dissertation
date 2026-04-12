@@ -1,1 +1,264 @@
 
+!pip install -q -U \
+    transformers>=4.42.0 \
+    accelerate>=0.30.0 \
+    datasets>=2.19.0 \
+    peft>=0.11.0 \
+    trl>=0.9.6 \
+    bitsandbytes>=0.46.1 \
+    sentencepiece \
+    huggingface-hub
+
+# VerifYING installation and GPU
+import torch
+import transformers
+import peft
+import trl
+import bitsandbytes as bnb
+
+print("Transformers version:", transformers.__version__)
+print("PEFT version:", peft.__version__)
+print("TRL version:", trl.__version__)
+print("BitsAndBytes version:", bnb.__version__)
+
+print("\nGPU available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+    print("VRAM:", round(torch.cuda.get_device_properties(0).total_memory / 1e9, 2), "GB")
+
+
+import os
+from pathlib import Path
+
+import torch
+from datasets import load_dataset
+
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    BitsAndBytesConfig,
+    set_seed,
+)
+
+from peft import (
+    LoraConfig,
+    prepare_model_for_kbit_training,
+)
+
+from trl import SFTTrainer, SFTConfig
+
+
+SEED = 42
+set_seed(SEED)
+
+MODEL_ID = "mistralai/Mistral-7B-v0.3"
+assert "Instruct" not in MODEL_ID, "You selected an Instruct model; use the BASE checkpoint only."
+
+TRAIN_FILE = "/content/train_alpaca_plus_safety_instruction.jsonl"
+OUTPUT_DIR = "/mnt/data/mistral7b_v03_alpaca_plus_safety_instruction_qlora"
+
+MAX_SEQ_LEN = 1024
+
+print(" Config loaded")
+print("SEED:", SEED)
+print("MODEL_ID:", MODEL_ID)
+print("TRAIN_FILE:", TRAIN_FILE)
+print("OUTPUT_DIR:", OUTPUT_DIR)
+print("MAX_SEQ_LEN:", MAX_SEQ_LEN)
+print("GPU:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU")
+
+
+
+tokenizer = AutoTokenizer.from_pretrained(
+    MODEL_ID,
+    use_fast=True,
+)
+
+# Decoder-only LMs often have no pad token by default.
+# For training with dynamic padding, we must define one.
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
+# Right padding is the standard choice for training with causal LMs.
+tokenizer.padding_side = "right"
+
+# Keep this fixed across all runs to maintain experimental control.
+tokenizer.model_max_length = MAX_SEQ_LEN
+
+print(" Tokenizer loaded")
+print("Vocab size:", tokenizer.vocab_size)
+print("EOS token id:", tokenizer.eos_token_id)
+print("PAD token id:", tokenizer.pad_token_id)
+print("padding_side:", tokenizer.padding_side)
+print("model_max_length:", tokenizer.model_max_length)
+
+
+
+# 1) Defining the 4-bit quantization configuration (QLoRA)
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,                 # enable 4-bit weight loading
+    bnb_4bit_quant_type="nf4",         # NF4 quantization (recommended for QLoRA)
+    bnb_4bit_use_double_quant=True,    # double quantization to reduce quantization error
+    bnb_4bit_compute_dtype=torch.bfloat16,
+)
+
+# 2) Load the BASE model with that quantization config
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_ID,
+    quantization_config=bnb_config,
+    device_map={"": 0},
+    torch_dtype=torch.bfloat16,
+    low_cpu_mem_usage=True,
+)
+
+print(" Base model loaded in 4-bit (QLoRA-ready)")
+print("Model:", MODEL_ID)
+
+
+
+
+model = prepare_model_for_kbit_training(model)
+
+# 2) Define the LoRA adapter configuration.
+# These hyperparameters  remains identical across your format A and format B runs.
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+    target_modules=[
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj"
+    ],
+)
+
+
+from peft import get_peft_model
+model = get_peft_model(model, lora_config)
+
+# 4) Print trainable parameter count (for reporting in dissertation).
+model.print_trainable_parameters()
+
+
+
+ds_train = load_dataset(
+    "json",
+    data_files=TRAIN_FILE,
+    split="train",
+)
+
+
+print("Dataset loaded")
+print("File:", TRAIN_FILE)
+print("Rows:", len(ds_train))
+print("Columns:", ds_train.column_names)
+
+
+assert "text" in ds_train.column_names, "Expected a 'text' column in the JSONL file."
+
+
+print("\n--- Sample training texts (first 2 rows, truncated) ---")
+for i in range(2):
+    print(f"\n[Row {i}]")
+    print(ds_train[i]["text"][:800])
+
+
+ds_train = ds_train.shuffle(seed=SEED)
+
+print(" Dataset shuffled with seed:", SEED)
+
+
+
+
+import math
+
+
+num_examples = len(ds_train)
+effective_batch = 1 * 16
+updates_per_epoch = math.ceil(num_examples / effective_batch)
+total_update_steps = updates_per_epoch * 1
+
+
+warmup_steps = max(10, int(0.03 * total_update_steps))
+
+print("num_examples:", num_examples)
+print("updates_per_epoch:", updates_per_epoch)
+print("total_update_steps:", total_update_steps)
+print("warmup_steps:", warmup_steps)
+
+sft_config = SFTConfig(
+    output_dir=OUTPUT_DIR,
+
+
+    num_train_epochs=1,
+
+
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=16,
+
+
+    learning_rate=2e-4,
+    lr_scheduler_type="cosine",
+    warmup_steps=warmup_steps,
+    optim="paged_adamw_8bit",
+
+
+    bf16=True,
+    fp16=False,
+
+
+    gradient_checkpointing=True,
+    max_grad_norm=1.0,
+
+
+    logging_steps=10,
+    save_steps=200,
+    save_total_limit=2,
+    report_to="none",
+
+
+    seed=SEED,
+
+
+    max_length=MAX_SEQ_LEN,
+    packing=False,
+)
+
+print("SFTConfig created (warmup_steps, no warmup_ratio)")
+
+
+
+
+
+sft_config.dataset_text_field = "text"
+
+trainer = SFTTrainer(
+    model=model,
+    args=sft_config,
+    train_dataset=ds_train,
+    processing_class=tokenizer,
+)
+
+
+trainer.model.config.use_cache = False
+
+print(" SFTTrainer initialized successfully")
+
+
+
+
+train_result = trainer.train()
+
+print("✅ Training complete")
+print(train_result)
+
+.
+trainer.model.save_pretrained(OUTPUT_DIR)
+
+
+tokenizer.save_pretrained(OUTPUT_DIR)
+
+print(" Saved adapter + tokenizer to:", OUTPUT_DIR)
+
+
