@@ -11,6 +11,8 @@ The model was downloaded from [HuggingFace](https://huggingface.co/mistralai/Mis
 
 Both models were fine-tuned using Supervised Fine-Tuning (SFT) with QLoRA (Quantised Low-Rank Adaptation), implemented using the HuggingFace PEFT and TRL libraries. The base model Mistral-7B-v0.3 was loaded in 4-bit NF4 quantisation using BitsAndBytes, keeping the base weights frozen while only training small LoRA adapter layers attached to the attention and feed-forward projection modules. Training was run on Google Colab A100 GPUs using TRL's SFTTrainer with the paged_adamw_8bit optimiser, cosine learning rate scheduling, and gradient checkpointing for memory efficiency. A fixed seed of 42 was used across all runs to ensure reproducibility. For the both models every training parameters remains the same. The training script is available here:[instruction_format_fine_tuning.py](instruction_format_fine_tuning%20(1).py).
 
+All the fine-tuned models are available at [trained models](https://drive.google.com/drive/folders/1q3eV9mqQyRB7zFfmI9XH_ShbDFOwJFb1?usp=sharing) 
+
 #  Datasets 
 
  #for Training the model we have used two datasets that are listed below 
@@ -28,4 +30,4 @@ Both models were fine-tuned using Supervised Fine-Tuning (SFT) with QLoRA (Quant
  
 3. [SORRY-Bench Prompts](evaluation_data/sorrybench)
 
-[trained models](https://drive.google.com/drive/folders/1q3eV9mqQyRB7zFfmI9XH_ShbDFOwJFb1?usp=sharing)
+
