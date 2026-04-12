@@ -28,4 +28,4 @@ Both models were fine-tuned using Supervised Fine-Tuning (SFT) with QLoRA (Quant
  
 3. [SORRY-Bench Prompts](evaluation_data/sorrybench)
 
-
+[trained models](https://drive.google.com/drive/folders/1q3eV9mqQyRB7zFfmI9XH_ShbDFOwJFb1?usp=sharing)
