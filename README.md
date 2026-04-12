@@ -24,7 +24,7 @@ All the fine-tuned models are available at [trained models](https://drive.google
 
 #for Evalaution we have used the datsets that are listed below
 
-1. A 150 prompts which are unseen in training from safe text SafeText datset
+1. A 150 prompts which are unseen in training from SafeText datset
  
 2. [AdvBench Prompts](evaluation_data/advbench)
  
