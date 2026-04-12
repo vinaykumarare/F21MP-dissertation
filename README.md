@@ -14,12 +14,18 @@ Both models were fine-tuned using Supervised Fine-Tuning (SFT) with QLoRA (Quant
 #  Datasets 
 
  #for Training the model we have used two datasets that are listed below 
-[Alpaca Data](data/training/alpaca_data)
-[SafeText Data](data/training/safetext)
+ 
+1. [Alpaca Data](data/training/alpaca_data).
+   
+2. [SafeText Data](data/training/safetext)
 
-#for Evalaution we have used the datsets that are listed below'
+
+#for Evalaution we have used the datsets that are listed below
+
 1. A 150 prompts which are unseen in training from safe text SafeText datset
+ 
 2. [AdvBench Prompts](evaluation_data/advbench)
+ 
 3. [SORRY-Bench Prompts](evaluation_data/sorrybench)
 
 
