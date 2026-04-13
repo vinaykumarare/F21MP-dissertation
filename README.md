@@ -32,13 +32,6 @@ All the fine-tuned models are available here [trained models](https://drive.goog
 
 # Results 
 
-## 📊 Results
-
-### Overview
-We evaluated two fine-tuned models (Model A - Instruction-trained, Model B - Question-trained) 
-across three conditions: in-domain, cross-format, and out-of-domain evaluation.
-
----
 
 # 1. Same-Domain Evaluation — 100% Refusal Rate
 
